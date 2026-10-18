@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kf"
+version = "0.0.1"
+requires-python = ">=3.11"
+dependencies = ["pyyaml", "requests", "numpy", "python-docx", "openpyxl", "python-pptx", "fpdf2", "pypdf"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"kf.web" = ["static/*", "static/fonts/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,0 +1,13 @@
+# environments and build output
+.venv/
+venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# generated or local data: regenerate with `python -m kf.corpus.generate` (see README.md)
+testdata/
+mydata/
+
+# the brand guidelines PDF names the association; this proof of concept keeps that name out of the repository
+docs/Brand Guidelines*.pdf

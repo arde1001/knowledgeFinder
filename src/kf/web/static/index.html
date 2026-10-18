@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domain Expert Demo</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="rail" aria-hidden="true">
+  <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>
+</div>
+
+<div class="page">
+  <header class="top">
+    <div>
+      <p class="kicker">Proof of concept</p>
+      <h1>Domain Expert</h1>
+    </div>
+    <p class="demo-note">Test data and test users. Answers come only from files the chosen person may read.</p>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden></div>
+
+  <main class="layout">
+    <aside class="side" aria-label="Who is asking">
+      <section class="card">
+        <label for="user" class="label">Test user</label>
+        <select id="user"></select>
+        <div id="roles" class="chips" aria-label="Roles"></div>
+      </section>
+
+      <section class="card" id="tests-card" hidden>
+        <h2>Test questions</h2>
+        <p class="hint">One fact from each drive. Ask the same question as different users.</p>
+        <ul id="tests" class="plain tests"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Drives you can open</h2>
+        <ul id="drives" class="plain"></ul>
+        <div id="shared-wrap" hidden>
+          <h3>Some single files shared with you</h3>
+          <ul id="shared" class="plain"></ul>
+        </div>
+      </section>
+    </aside>
+
+    <section class="chat card" aria-label="Chat">
+      <div class="chat-head">
+        <h2 id="chat-title">Ask a question</h2>
+        <button id="new-chat" type="button" class="ghost">New chat</button>
+      </div>
+      <div id="log" class="log" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <form id="form" class="composer" autocomplete="off">
+        <label for="question" class="sr">Your question</label>
+        <textarea id="question" rows="2" maxlength="1000" placeholder="Ask about events, budgets, deadlines, positions ..."></textarea>
+        <button id="send" type="submit" class="primary">Send</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<template id="lock-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></template>
+<script src="/app.js"></script>
+</body>
+</html>
