@@ -123,5 +123,6 @@ These need the generated data in `testdata/` and write into `evals/`; do not run
 | `no drive folders found` | The files must be in `<data>/drive/<Drive folder>/...`. |
 | Address already in use | Another demo is running: `python -m kf.web --port 8766`. |
 | Too slow | Smaller chat model: `KF_CHAT_MODEL=qwen3:4b` (Windows: `$env:KF_CHAT_MODEL="qwen3:4b"`), then label again. |
+| Too slow / unsure which profile | `python -m kf.doctor` measures this machine and suggests a profile (`--profile low`, `mid` or `high`). Paste its output block when asking for help. |
 
 Windows and macOS: not tested yet. What was fixed and what to check is in `windows-mac.md`.
