@@ -2,6 +2,7 @@
 
     python -m kf.workspace init  --data mydata    # mydata/drive/<Drive folder>/... exists; writes the rest of the test setup
     python -m kf.workspace users --data mydata    # who exists, with which roles, and which drives they can open
+    python -m kf.workspace pack  --data testdata  # zip a GENERATED synthetic corpus (labels, indexes) for sharing
 
 Every top-level folder under <data>/drive is one shared drive. `init` writes drives.yaml, users.yaml, shares.yaml and
 drive_meta.json (creation dates), which an export does not carry. Roles follow the demo model: test.board opens every
@@ -16,6 +17,7 @@ import json
 import random
 import re
 import sys
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -87,12 +89,40 @@ def show_users(data):
         print(f"{u:28} {'+'.join(policy.roles_of(u)) or '-':26} {opened}")
 
 
+BUNDLE = ["drive", "index", "drive_meta.json", "drives.yaml", "users.yaml", "shares.yaml", "filemap.json", "filemap.md",
+          "manifest.json", "qa.jsonl", "negatives.jsonl", "general.jsonl", "paraphrases.jsonl", "pii.json"]
+
+
+def pack(data, out):
+    """Zip a corpus written by kf.corpus.generate, as testdata/... Real files must never leave the machine, so every file
+    under drive/ has to be one the generator listed in manifest.json."""
+    data = Path(data)
+    manifest = data / "manifest.json"
+    if not manifest.exists():
+        raise SystemExit(f"{manifest} is missing: only a corpus made by kf.corpus.generate can be packed")
+    listed = {f["path"] for f in json.loads(manifest.read_text(encoding="utf-8"))}
+    on_disk = {f.relative_to(data / "drive").as_posix() for f in (data / "drive").rglob("*") if f.is_file()}
+    if on_disk != listed:
+        raise SystemExit(f"drive/ does not match the generator's manifest ({len(on_disk - listed)} unknown, "
+                         f"{len(listed - on_disk)} missing files): refusing to pack")
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in BUNDLE:
+            p = data / name
+            for f in [p] if p.is_file() else sorted(p.rglob("*")) if p.is_dir() else []:
+                if f.is_file():
+                    z.write(f, (Path("testdata") / f.relative_to(data)).as_posix())
+    print(f"{out}: {Path(out).stat().st_size / 1e6:.1f} MB")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("command", choices=["init", "users"])
+    ap.add_argument("command", choices=["init", "users", "pack"])
     ap.add_argument("--data", required=True)
     ap.add_argument("--force", action="store_true", help="init: overwrite existing setup files")
+    ap.add_argument("--out", default="kf-testdata.zip", help="pack: the zip to write")
     a = ap.parse_args()
+    if a.command == "pack":
+        return pack(a.data, a.out)
     init(a.data, a.force) if a.command == "init" else show_users(a.data)
 
 

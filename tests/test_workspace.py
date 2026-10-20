@@ -48,3 +48,18 @@ def test_init_does_not_overwrite_unless_forced(fragment):
 def test_init_without_drive_folders_explains_what_to_do(tmp_path):
     with pytest.raises(SystemExit, match="one folder per shared drive"):
         workspace.init(tmp_path)
+
+
+def test_pack_refuses_anything_but_a_generated_corpus(tmp_path, fragment):
+    with pytest.raises(SystemExit, match="manifest.json is missing"):  # a fragment of real files has no manifest
+        workspace.pack(fragment, tmp_path / "x.zip")
+    from kf.corpus.generate import build
+    data = tmp_path / "gen"
+    build(data, seed=1, use_llm=False, workers=2, limit=5)
+    workspace.pack(data, tmp_path / "ok.zip")
+    import zipfile
+    names = zipfile.ZipFile(tmp_path / "ok.zip").namelist()
+    assert "testdata/manifest.json" in names and all(n.startswith("testdata/") for n in names)
+    next(d for d in (data / "drive").iterdir() if d.is_dir()).joinpath("real-minutes.docx").write_bytes(b"not generated")
+    with pytest.raises(SystemExit, match="1 unknown"):
+        workspace.pack(data, tmp_path / "bad.zip")

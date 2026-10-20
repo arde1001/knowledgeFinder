@@ -29,8 +29,8 @@ mid:  # Apple Silicon with 16 GB, or a laptop NVIDIA GPU with 6-8 GB
 
 low:  # 8 GB RAM, no usable GPU (Intel Mac, older laptops) or 8 GB Apple Silicon
   chat_model: qwen3:1.7b
-  embed_model: nomic-embed-text
-  finder: finder.yaml
+  embed_model: snowflake-arctic-embed:33m  # 3.6x faster than nomic on a CPU, nearly the same hit rate
+  finder: finder-snowflake-arctic-embed_33m.yaml
   num_ctx: 4096
   workers: 1
   label_chars: 1500

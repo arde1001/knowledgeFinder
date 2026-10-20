@@ -219,8 +219,8 @@ def denial_sweep(finder, policy, personas, qa, negatives, general, raws, base):
     from dataclasses import replace
 
     rules = [("cluster K=3 N=2", dict(denial_mode="cluster", K=3, N=2)), ("cluster K=5 N=2", dict(denial_mode="cluster", K=5, N=2))]
-    for mds in (0.87, 0.95, 1.0):
-        for margin in (0.0, 0.03, 0.06, 0.1, 0.15, 0.2, 0.3):
+    for mds in (round(base.min_score + d, 2) for d in (0, 0.08, 0.13)):  # 0.87 / 0.95 / 1.0 for nomic-embed-text
+        for margin in (0.0, 0.03, 0.04, 0.05, 0.06, 0.1, 0.15, 0.2, 0.3):
             rules.append((f"best, min {mds}, margin {margin}", dict(denial_mode="best", min_denial_score=mds, margin=margin)))
     lines = ["| rule | names the answer's drive | names another drive | notice when the answer is readable | notice on unanswerable | notice on general-association | notice on general-event |",
              "|---|---|---|---|---|---|---|"]
