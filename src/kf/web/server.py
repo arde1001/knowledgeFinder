@@ -35,6 +35,7 @@ STATIC = Path(__file__).parent / "static"
 MAX_SESSIONS = 50
 MAX_BODY = 20_000
 MAX_QUESTION = 1000
+LLM_DOWN = "The language model did not answer. Is Ollama running and are the models pulled?"
 
 
 def ollama_up():
@@ -111,8 +112,8 @@ def open_window(url):
 class App:
     """Shared state: the finder, one Expert (chat history) per browser session and user, and a lock that serialises model calls."""
 
-    def __init__(self, finder, data, chat=llm.chat):
-        self.finder, self.data, self.chat = finder, Path(data), chat
+    def __init__(self, finder, data, chat=llm.chat, chat_stream=llm.chat_stream):
+        self.finder, self.data, self.chat, self.chat_stream = finder, Path(data), chat, chat_stream
         self.sessions = OrderedDict()
         self.lock = threading.Lock()
         qa = self.data / "qa.jsonl"
@@ -138,15 +139,15 @@ class App:
     def expert(self, user, sid):
         key = (sid, user)
         if key not in self.sessions:
-            self.sessions[key] = Expert(self.finder, chat=self.chat)
+            self.sessions[key] = Expert(self.finder, chat=self.chat, chat_stream=self.chat_stream)
             while len(self.sessions) > MAX_SESSIONS:
                 self.sessions.popitem(last=False)
         self.sessions.move_to_end(key)
         return self.sessions[key]
 
-    def ask(self, user, sid, question):
+    def ask(self, user, sid, question, on_delta=None):
         with self.lock:
-            r = self.expert(user, sid).ask(user, question)
+            r = self.expert(user, sid).ask(user, question, on_delta)
         return {"answer": r.answer, "query": r.query, "notice": notice(r.denial) if r.denial else None,
                 "sources": [{"n": n, "path": path, "drive": drive, "created": created} for n, path, drive, created in r.sources]}
 
@@ -162,16 +163,36 @@ def handler(app):
         def log_message(self, fmt, *args):
             pass
 
-        def send(self, code, body, ctype="application/json; charset=utf-8"):
-            data = body if isinstance(body, bytes) else json.dumps(body).encode()
+        def head(self, code, ctype, length=None):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
+            if length is not None:
+                self.send_header("Content-Length", str(length))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'")
             self.end_headers()
+
+        def send(self, code, body, ctype="application/json; charset=utf-8"):
+            data = body if isinstance(body, bytes) else json.dumps(body).encode()
+            self.head(code, ctype, len(data))
             self.wfile.write(data)
+
+        def event(self, name, data):
+            self.wfile.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
+
+        def stream_ask(self, user, sid, question):
+            """Server-sent events: `delta` per piece of the model's words, then one `final` (the same JSON as /api/ask, which
+            replaces the streamed text) or one `error`. Sources and the notice exist only in `final`. HTTP/1.0: closing ends the body."""
+            self.head(200, "text/event-stream; charset=utf-8")
+            try:
+                try:
+                    out = ("final", app.ask(user, sid, question, lambda t: self.event("delta", {"text": t})))
+                except requests.RequestException:  # before OSError: it is a subclass
+                    out = ("error", {"error": LLM_DOWN})
+                self.event(*out)
+            except OSError:  # the page went away mid-answer: stop generating
+                pass
 
         def host_ok(self):  # DNS-rebinding guard: only requests addressed to this machine's own name are served
             port = self.server.server_port
@@ -210,14 +231,16 @@ def handler(app):
             if self.path == "/api/reset":
                 app.reset(user, sid)
                 return self.send(200, {"ok": True})
-            if self.path == "/api/ask":
+            if self.path in ("/api/ask", "/api/ask_stream"):
                 question = str(body.get("question", "")).strip()[:MAX_QUESTION]
                 if not question:
                     return self.send(400, {"error": "empty question"})
+                if self.path == "/api/ask_stream":
+                    return self.stream_ask(user, sid, question)
                 try:
                     return self.send(200, app.ask(user, sid, question))
                 except requests.RequestException:
-                    return self.send(503, {"error": "The language model did not answer. Is Ollama running and are the models pulled?"})
+                    return self.send(503, {"error": LLM_DOWN})
             self.send(404, {"error": "not found"})
 
     return Handler

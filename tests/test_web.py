@@ -4,9 +4,11 @@ import threading
 from http.server import ThreadingHTTPServer
 
 import pytest
+import requests
 
 from test_retriever import env, make  # noqa: F401  (env is a pytest fixture)
 
+from kf.expert import NOTHING
 from kf.web.server import App, handler
 
 
@@ -19,12 +21,26 @@ class FakeChat:
         return "The gala is at Harbour Hall [1]."
 
 
+class FakeStream:
+    """Stands in for llm.chat_stream: yields `reply` in small pieces."""
+
+    def __init__(self, reply="The gala is at Harbour Hall [1]."):
+        self.reply, self.calls, self.fail = reply, [], False
+
+    def __call__(self, messages, **kw):
+        self.calls.append(messages)
+        if self.fail:
+            raise requests.ConnectionError("down")
+        for i in range(0, len(self.reply), 7):
+            yield self.reply[i : i + 7]
+
+
 @pytest.fixture
 def server(env):
     finder, _ = make(env)
-    chat = FakeChat()
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler(App(finder, env[0], chat=chat)))
-    httpd.chat = chat
+    chat, stream = FakeChat(), FakeStream()
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler(App(finder, env[0], chat=chat, chat_stream=stream)))
+    httpd.chat, httpd.stream = chat, stream
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield httpd
     httpd.shutdown()
@@ -94,3 +110,64 @@ def test_each_session_has_its_own_history_and_reset_clears_it(server):
     assert call(server, "POST", "/api/reset", {"user": "bob", "session": "a"})[0] == 200
     ask("a")
     assert server.chat.calls == 5
+
+
+def stream(server, body):
+    """POST /api/ask_stream and return [(event, data)]."""
+    port = server.server_port
+    conn = http.client.HTTPConnection("127.0.0.1", port)
+    conn.request("POST", "/api/ask_stream", json.dumps(body), {"Host": f"127.0.0.1:{port}", "Content-Type": "application/json"})
+    r = conn.getresponse()
+    assert r.status == 200 and r.getheader("Content-Type").startswith("text/event-stream")
+    events = []
+    for block in r.read().decode().strip().split("\n\n"):
+        name, data = block.split("\n")
+        events.append((name.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return events
+
+
+def test_stream_sends_deltas_then_one_final_with_sources(server):
+    events = stream(server, {"user": "bob", "session": "s1", "question": "gala venue Harbour Hall"})
+    names = [n for n, _ in events]
+    assert names[-1] == "final" and names.count("final") == 1 and set(names[:-1]) == {"delta"} and len(names) > 2
+    assert "".join(d["text"] for n, d in events if n == "delta") == server.stream.reply
+    final = events[-1][1]
+    assert set(final) == {"answer", "query", "notice", "sources"} and final["sources"][0]["path"] == "events/gala.md"
+    assert server.chat.calls == 0  # the answer call streamed; no second, non-streamed call
+
+
+def test_stream_not_found_is_replaced_by_the_standard_reply_without_sources(server):
+    server.stream.reply = "NOT_FOUND"
+    events = stream(server, {"user": "bob", "session": "s1", "question": "gala venue Harbour Hall"})
+    assert "".join(d["text"] for n, d in events if n == "delta") == "NOT_FOUND"
+    final = events[-1][1]
+    assert final["answer"].startswith(NOTHING) and final["sources"] == []
+
+
+def test_stream_never_carries_prompts_excerpts_or_the_notice_before_the_final_event(server):
+    events = stream(server, {"user": "dave", "session": "s1", "question": "hackathon budget board approved"})
+    deltas = json.dumps([d for n, d in events if n == "delta"])
+    assert all(n == "delta" for n, _ in events[:-1])
+    for secret in ("Harbour Hall", "+358", "anna.virtanen", "hackathon budget of 9000", "Drive Board", "you do not have permission"):
+        assert secret not in deltas and secret not in json.dumps(events[-1][1].get("sources")), secret
+    assert "prompt" not in json.dumps(events) and "Excerpts" not in json.dumps(events)
+
+
+def test_stream_notice_arrives_only_in_the_final_event(server):
+    server.stream.reply = "Nothing to add."
+    events = stream(server, {"user": "dave", "session": "s1", "question": "hackathon budget of 9000 euros board approved"})
+    assert events[-1][1]["notice"] and all("notice" not in d for n, d in events[:-1])
+
+
+def test_stream_keeps_the_same_protections_as_ask(server):
+    body = {"user": "bob", "question": "x"}
+    assert call(server, "POST", "/api/ask_stream", body, host="evil.example:80")[0] == 403
+    assert call(server, "POST", "/api/ask_stream", body, headers={"Content-Type": "text/plain"})[0] == 403
+    assert call(server, "POST", "/api/ask_stream", {"user": "nobody", "question": "x"})[0] == 404
+    assert call(server, "POST", "/api/ask_stream", {"user": "bob", "question": " "})[0] == 400
+
+
+def test_stream_reports_a_model_failure_as_an_error_event(server):
+    server.stream.fail = True
+    events = stream(server, {"user": "bob", "session": "s1", "question": "gala venue Harbour Hall"})
+    assert [n for n, _ in events] == ["error"] and "language model" in events[0][1]["error"]

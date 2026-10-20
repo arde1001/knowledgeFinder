@@ -79,6 +79,42 @@ function renderAnswer(msg, data) {
   }
 }
 
+// The answer, shown as it is generated. The final event replaces the streamed text (the server may rewrite it: NOT_FOUND, citations).
+// Falls back to /api/ask when the stream cannot be opened or breaks before the first word; an error event is reported as is.
+async function fetchAnswer(msg, payload) {
+  let started = false;
+  try {
+    const res = await fetch("/api/ask_stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "", text = "", final = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (let end; (end = buffer.indexOf("\n\n")) >= 0;) {
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const name = /^event: (\w+)/m.exec(block)?.[1];
+        const data = JSON.parse(/^data: (.*)$/m.exec(block)?.[1] || "{}");
+        if (name === "delta") {
+          started = true;
+          text += data.text;
+          renderAnswer(msg, { answer: text, sources: [], notice: null });
+          $("log").scrollTop = $("log").scrollHeight;
+        } else if (name === "final") final = data;
+        else if (name === "error") throw Object.assign(new Error(data.error), { reported: true });
+      }
+    }
+    if (!final) throw new Error("The answer stopped early.");
+    return final;
+  } catch (err) {
+    if (started || err.reported) throw err;
+    return api("/api/ask", payload);
+  }
+}
+
 async function ask(question) {
   if (busy || !question.trim()) return;
   busy = true;
@@ -91,7 +127,7 @@ async function ask(question) {
   dots.append(el("span"), el("span"), el("span"));
   msg.append(dots);
   try {
-    renderAnswer(msg, await api("/api/ask", { user, session, question }));
+    renderAnswer(msg, await fetchAnswer(msg, { user, session, question }));
   } catch (err) {
     msg.remove();
     banner(err.message);
