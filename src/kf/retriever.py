@@ -10,6 +10,7 @@ Sources that fail a check are skipped and listed in `Retriever.dropped` with the
 
 import hashlib
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 
@@ -17,6 +18,12 @@ from kf import llm, profiles
 from kf.extract import extract_text
 from kf.indexer import chunk_text, embedding_input
 from kf.pii import contains_pii, strip
+
+
+@lru_cache(maxsize=512)
+def _chunks(file, content_hash):
+    """PII-stripped chunks of a file's content. Keyed by the content's hash, so an edited file is extracted again."""
+    return tuple(chunk_text(strip(extract_text(file))))
 
 
 @dataclass
@@ -70,7 +77,7 @@ class Retriever:
             return self._drop(path, "missing or outside the corpus")
         try:
             content_hash = hashlib.sha256(file.read_bytes()).hexdigest()
-            chunks = chunk_text(strip(extract_text(file)))
+            chunks = list(_chunks(file, content_hash))
         except Exception as exc:  # unreadable or corrupt file
             return self._drop(path, f"unreadable: {exc}")
         if not chunks:

@@ -53,7 +53,9 @@ def start_ollama():
         print("Ollama is not running and was not found on this machine: install it from https://ollama.com/download", file=sys.stderr)
         return None
     print("Starting Ollama ...", flush=True)
-    proc = subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # the profile's server settings (one request at a time, both models resident, smaller KV cache) apply only to an Ollama we start
+    env = {**os.environ, **profiles.current().ollama_env}
+    proc = subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
     atexit.register(stop, proc)
     for _ in range(60):
         if ollama_up():
@@ -61,6 +63,16 @@ def start_ollama():
         time.sleep(0.5)
     print("Ollama did not start within 30 s; answers will fail until it does.", file=sys.stderr)
     return proc
+
+
+def warm_up(app):
+    """Load both models and the keyword index before the first question: a cold start costs 2-20 s on a laptop."""
+    with app.lock:
+        try:
+            app.finder.warm_up()
+            app.chat([{"role": "user", "content": "Say OK."}], max_tokens=1)
+        except requests.RequestException:
+            pass  # the first question reports it
 
 
 def stop(proc):
@@ -229,7 +241,8 @@ def main():
     except (FileNotFoundError, ValueError) as exc:
         raise SystemExit(str(exc))
     try:  # bind first: a busy port should fail before Ollama is started
-        server = ThreadingHTTPServer(("127.0.0.1", a.port), handler(App(finder, data)))
+        app = App(finder, data)
+        server = ThreadingHTTPServer(("127.0.0.1", a.port), handler(app))
     except OSError as exc:
         raise SystemExit(f"cannot listen on port {a.port} ({exc.strerror}): is another demo running? Try --port {a.port + 1}")
     for sig in (getattr(signal, n, None) for n in ("SIGTERM", "SIGHUP", "SIGBREAK")):  # the shell closing must end the child too
@@ -240,6 +253,8 @@ def main():
     gone = missing_models()
     if gone:
         print("Missing models (answers will fail): " + ", ".join(f"ollama pull {m}" for m in gone), file=sys.stderr)
+    else:
+        threading.Thread(target=warm_up, args=(app,), daemon=True).start()
     print(f"Domain expert demo on {url}  (Ctrl+C to stop)", flush=True)
     if not a.no_browser:
         threading.Timer(0.5, open_window, [url]).start()

@@ -113,6 +113,11 @@ class Finder:
                                for c in self.index.chunks])
         return self._bm25
 
+    def warm_up(self):
+        """Build the keyword index and load the embedding model now rather than on the first question."""
+        self._lexical()
+        self.index.embed_query("warm up")
+
     def _readable_set(self, user):
         if user not in self._readable:
             self._readable[user] = {p for p in self._live_set if self.policy.can_read(user, p)}

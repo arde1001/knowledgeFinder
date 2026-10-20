@@ -158,3 +158,17 @@ def test_personal_data_left_after_stripping_drops_the_passage(env, monkeypatch):
     monkeypatch.setattr(retriever_module, "strip", lambda text: text)  # simulate a stripper gap
     assert r.retrieve("bob", "gala", Result([source("events/gala.md")])) == []
     assert r.dropped == [("events/gala.md", "personal data left after stripping")]
+
+
+def test_unchanged_file_is_extracted_once_edited_file_again(env, monkeypatch):
+    finder, r = make(env)
+    calls = []
+    real = retriever_module.extract_text
+    monkeypatch.setattr(retriever_module, "extract_text", lambda f: calls.append(f) or real(f))
+    for _ in range(3):
+        r.retrieve("bob", "gala", Result([source("events/gala.md")]))
+    assert len(calls) == 1
+    path = env[1] / "events/gala.md"
+    path.write_text(path.read_text(encoding="utf-8") + "\nThe gala moved to Pier Hall.", encoding="utf-8")
+    assert "Pier Hall" in " ".join(p.text for p in r.retrieve("bob", "gala Pier Hall", Result([source("events/gala.md")])))
+    assert len(calls) == 2
