@@ -1,6 +1,6 @@
 """Admin tool: label every file and folder and write the filemap. Never runs on the question path.
 
-    PYTHONPATH=src .venv/bin/python -m kf.labeler --data testdata [--workers 4] [--limit N]
+    PYTHONPATH=src .venv/bin/python -m kf.labeler --data testdata [--profile low] [--workers 4] [--limit N]
 
 A file is labelled only if it has a creation date, a drive, a supported type and a PII-free description; anything
 else is left out of the filemap (and so can never be found). Rerunning keeps descriptions of files whose content is
@@ -17,12 +17,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from kf import filemap, llm
+from kf import filemap, llm, profiles
 from kf.extract import SUFFIXES, extract_text
 from kf.pii import contains_pii
 from kf.perms import Policy
 
-TEXT_LIMIT = 3000  # characters of a file shown to the model
+TEXT_LIMIT = 3000  # characters of a file shown to the model (the profile's label_chars on the command line)
 
 
 def _one_line(text):
@@ -61,7 +61,7 @@ def llm_summarize(folder, lines):
 
 
 def build_filemap(root, meta, policy, describe=llm_describe, summarize=llm_summarize, old=None, workers=4,
-                  model="", files=None, log=lambda *a: None):
+                  model="", files=None, log=lambda *a: None, text_limit=TEXT_LIMIT):
     root = Path(root)
     old_files = (old or {}).get("files", {})
     old_folders = (old or {}).get("folders", {})
@@ -84,7 +84,7 @@ def build_filemap(root, meta, policy, describe=llm_describe, summarize=llm_summa
             if prev.get("content_hash") == chash and prev.get("description"):
                 description, reused = prev["description"], True
             else:
-                description, reused = describe(rel, extract_text(path)[:TEXT_LIMIT]), False
+                description, reused = describe(rel, extract_text(path)[:text_limit]), False
             if not _usable(description):
                 raise ValueError("unusable description")
         except Exception as exc:  # unlabelled files stay out of the filemap
@@ -140,9 +140,11 @@ def build_filemap(root, meta, policy, describe=llm_describe, summarize=llm_summa
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="testdata", help="folder with drive/, users.yaml, drives.yaml, shares.yaml, drive_meta.json")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, help="parallel model calls (default: the profile's)")
     ap.add_argument("--limit", type=int, help="only the first N files (smoke test)")
+    profiles.add_argument(ap)
     a = ap.parse_args()
+    p = profiles.activate(a.profile)
     data = Path(a.data)
     out = data / "filemap.json"
     old = filemap.load(out) if out.exists() else None
@@ -151,8 +153,9 @@ def main():
     rels = sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file())
     t0 = time.time()
     fm, stats = build_filemap(
-        root, meta, Policy.load(data), old=old, workers=a.workers, model=llm.CHAT_MODEL,
+        root, meta, Policy.load(data), old=old, workers=a.workers or p.workers, model=p.chat_model,
         files=rels[: a.limit] if a.limit else None, log=lambda *x: print(*x, file=sys.stderr, flush=True),
+        text_limit=p.label_chars,
     )
     filemap.save(fm, out)
     print(f"{stats} folders={len(fm['folders'])} in {time.time() - t0:.0f}s -> {out}")

@@ -25,7 +25,6 @@ import bench_finder as bf
 from kf import account
 from kf.expert import notice
 from kf.extract import extract_text
-from kf.finder import Config
 from kf.pii import strip
 from kf.retriever import Retriever
 
@@ -68,7 +67,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).parent / "leak_test.md"))
     a = ap.parse_args()
-    policy, finder, personas, users, _ = bf.load(Config.load("finder.yaml"))
+    policy, finder, personas, users, _ = bf.load(bf.config())
     questions = [q["question"] for name in ("qa.jsonl", "negatives.jsonl", "general.jsonl") for q in bf.read_jsonl(name)]
     planted = [squash(x["value"]) for x in json.loads((bf.DATA / "pii.json").read_text(encoding="utf-8"))]
     where = windows_by_path(finder)

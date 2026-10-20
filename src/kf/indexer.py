@@ -1,13 +1,14 @@
 """Admin tool: embed the findable files into a vector index. Never runs on the question path.
 
-    PYTHONPATH=src .venv/bin/python -m kf.indexer --data testdata [--model nomic-embed-text] [--no-context]
+    PYTHONPATH=src .venv/bin/python -m kf.indexer --data testdata [--profile low] [--model nomic-embed-text] [--no-context]
 
 Only files that are live in the filemap are indexed. Text is PII-stripped before chunking, so no chunk text or
 vector is derived from personal data. By default each chunk is embedded together with its file name and the labeler's
 description, which ranks the right file higher (evals/index_benchmark.md: nomic-embed-text hit@1 0.85 vs 0.80, MRR 0.895
 vs 0.878; hit@5 about equal, slightly lower on cross-topic mentions). --no-context embeds the chunk text alone.
 
-Index = vectors.npy (unit vectors, one row per chunk) + chunks.json ({"meta", "chunks": [{"path", "chunk", "text"}]}).
+Index = vectors.npy (unit vectors, one row per chunk) + chunks.json ({"meta", "chunks": [{"path", "chunk", "text"}]}),
+in <data>/index/<model>/ so indexes of several embedding models can sit side by side (index_dir).
 """
 
 import argparse
@@ -20,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kf import filemap, llm
+from kf import filemap, llm, profiles
 from kf.extract import extract_text
 from kf.perms import Policy
 from kf.pii import strip
@@ -64,6 +65,19 @@ def build_index(root, fm, policy, out, embed_documents=llm.embed_documents, mode
     return meta
 
 
+def same_model(a, b):
+    return a.removesuffix(":latest") == b.removesuffix(":latest")
+
+
+def index_dir(data, model):
+    """<data>/index/<model>/. An older single index directly in <data>/index is used when it was built with this model."""
+    base = Path(data) / "index"
+    legacy = base / "chunks.json"
+    if legacy.exists() and same_model(json.loads(legacy.read_text(encoding="utf-8"))["meta"]["model"], model):
+        return base
+    return base / profiles.slug(model)
+
+
 class Index:
     def __init__(self, vectors, chunks, meta, embed_query=None):
         self.vectors, self.chunks, self.meta = vectors, chunks, meta
@@ -105,17 +119,21 @@ class Index:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="testdata")
-    ap.add_argument("--model", default=llm.EMBED_MODEL)
+    ap.add_argument("--model", help="embedding model (default: the profile's)")
     ap.add_argument("--no-context", action="store_true", help="embed chunk text alone, without the file label")
-    ap.add_argument("--out", help="default: <data>/index")
+    ap.add_argument("--out", help="default: <data>/index/<model>")
+    profiles.add_argument(ap)
     a = ap.parse_args()
+    p = profiles.activate(a.profile)
+    model = a.model or p.embed_model
     data = Path(a.data)
+    out = Path(a.out) if a.out else index_dir(data, model)
     t0 = time.time()
     meta = build_index(
-        data / "drive", filemap.load(data / "filemap.json"), Policy.load(data), a.out or data / "index",
-        embed_documents=lambda texts: llm.embed_documents(texts, a.model), model=a.model, context=not a.no_context,
+        data / "drive", filemap.load(data / "filemap.json"), Policy.load(data), out,
+        embed_documents=lambda texts: llm.embed_documents(texts, model), model=model, context=not a.no_context,
     )
-    print(f"{meta} in {time.time() - t0:.1f}s")
+    print(f"{meta} in {time.time() - t0:.1f}s -> {out}")
 
 
 if __name__ == "__main__":

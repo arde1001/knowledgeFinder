@@ -1,24 +1,34 @@
-"""Minimal Ollama client. Models come from the environment so they can be swapped without code changes."""
+"""Minimal Ollama client. Models and context size come from the active profile (kf.profiles), so they can be swapped
+without code changes."""
 
 import os
 
 import requests
 
+from kf import profiles
+
 URL = os.environ.get("KF_OLLAMA_URL", "http://localhost:11434")
-CHAT_MODEL = os.environ.get("KF_CHAT_MODEL", "qwen3:8b")
-EMBED_MODEL = os.environ.get("KF_EMBED_MODEL", "nomic-embed-text")
+
+
+def __getattr__(name):  # llm.CHAT_MODEL / llm.EMBED_MODEL always follow the active profile
+    if name == "CHAT_MODEL":
+        return profiles.current().chat_model
+    if name == "EMBED_MODEL":
+        return profiles.current().embed_model
+    raise AttributeError(name)
 
 
 def chat(messages, model=None, temperature=0.7, seed=None, max_tokens=None, timeout=300):
     """Return the reply text. Thinking is off: these tasks want short direct answers."""
-    options = {"temperature": temperature, "num_ctx": 8192}
+    # one num_ctx per process: Ollama reloads the model whenever it changes
+    options = {"temperature": temperature, "num_ctx": profiles.current().num_ctx}
     if seed is not None:
         options["seed"] = seed
     if max_tokens:
         options["num_predict"] = max_tokens
     r = requests.post(
         f"{URL}/api/chat",
-        json={"model": model or CHAT_MODEL, "messages": messages, "stream": False, "think": False, "options": options},
+        json={"model": model or profiles.current().chat_model, "messages": messages, "stream": False, "think": False, "options": options},
         timeout=timeout,
     )
     r.raise_for_status()
@@ -29,16 +39,17 @@ def chat(messages, model=None, temperature=0.7, seed=None, max_tokens=None, time
 PREFIXES = {
     "nomic-embed-text": ("search_document: ", "search_query: "),
     "qwen3-embedding": ("", "Instruct: Given a question, retrieve the passage that answers it\nQuery: "),
+    "snowflake-arctic-embed": ("", "Represent this sentence for searching relevant passages: "),
 }
 
 
 def _prefixes(model):
-    return PREFIXES.get((model or EMBED_MODEL).split(":")[0], ("", ""))
+    return PREFIXES.get((model or profiles.current().embed_model).split(":")[0], ("", ""))
 
 
 def embed(texts, model=None, timeout=300):
     """Return one vector per text, as given (no prefixes)."""
-    r = requests.post(f"{URL}/api/embed", json={"model": model or EMBED_MODEL, "input": list(texts)}, timeout=timeout)
+    r = requests.post(f"{URL}/api/embed", json={"model": model or profiles.current().embed_model, "input": list(texts)}, timeout=timeout)
     r.raise_for_status()
     return r.json()["embeddings"]
 

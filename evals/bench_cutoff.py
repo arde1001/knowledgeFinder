@@ -21,7 +21,6 @@ from pathlib import Path
 import bench_finder as bf
 from kf import llm
 from kf.expert import NOTHING, Expert
-from kf.finder import Config
 
 squash = lambda s: re.sub(r"\s+", " ", s).strip().lower()
 EVENT = re.compile(r"(?:[A-Z][a-z]+ )+20\d\d")
@@ -69,7 +68,7 @@ def main():
     ap.add_argument("--values", default="0.87,0.8,0.72,0.65,0.55")
     ap.add_argument("--out", default=str(Path(__file__).parent / "cutoff_benchmark.md"))
     a = ap.parse_args()
-    base = Config.load("finder.yaml")
+    base = bf.config()
     policy, finder, personas, users, _ = bf.load(base)
     qa, negatives = bf.read_jsonl("qa.jsonl"), bf.read_jsonl("negatives.jsonl")
     para = paraphrases(qa)

@@ -17,7 +17,6 @@ from pathlib import Path
 import bench_finder as bf
 from kf.corpus.spec import ROLE_BOARD
 from kf.expert import Expert
-from kf.finder import Config
 
 squash = lambda s: re.sub(r"\s+", " ", s).strip().lower()
 EVENT = re.compile(r"(?:[A-Z][a-z]+ )+20\d\d")
@@ -50,7 +49,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).parent / "demo_transcript.md"))
     a = ap.parse_args()
-    policy, finder, base, users, _ = bf.load(Config.load("finder.yaml"))
+    policy, finder, base, users, _ = bf.load(bf.config())
     expert = Expert(finder)
     qa = bf.read_jsonl("qa.jsonl")
     general = [g for g in bf.read_jsonl("general.jsonl") if g["kind"] == "general-association"]

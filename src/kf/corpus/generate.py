@@ -1,4 +1,4 @@
-"""Generate the synthetic corpus: python -m kf.corpus.generate --out testdata [--seed 1] [--no-llm] [--workers 4]
+"""Generate the synthetic corpus: python -m kf.corpus.generate --out testdata [--seed 1] [--no-llm] [--profile low] [--workers 4]
 
 Writes <out>/drive/** plus ground truth: users/drives/shares.yaml, qa.jsonl, pii.json, manifest.json.
 Ground truth is exact because planted facts and PII are appended verbatim whenever the model leaves them out.
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from kf import llm
+from kf import llm, profiles
 from kf.corpus.render import render
 from kf.corpus.spec import DRIVES, build_general, build_negatives, build_spec
 from kf.extract import extract_text
@@ -122,10 +122,12 @@ def main():
     ap.add_argument("--out", default="testdata")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--no-llm", action="store_true", help="template prose instead of the local model (fast, for tests)")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, help="parallel model calls (default: the profile's)")
     ap.add_argument("--limit", type=int, help="only the first N files (smoke test)")
+    profiles.add_argument(ap)
     a = ap.parse_args()
-    files = build(a.out, a.seed, not a.no_llm, a.workers, a.limit)
+    p = profiles.activate(a.profile)
+    files = build(a.out, a.seed, not a.no_llm, a.workers or p.workers, a.limit)
     bad = verify(a.out, files)
     print(f"{len(files)} files, {sum(len(f.facts) for f in files)} facts, {sum(len(f.pii) for f in files)} PII strings, "
           f"{len(bad)} verification failures")

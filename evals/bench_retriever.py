@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 import bench_finder as bf
-from kf.finder import Config
 from kf.retriever import Retriever, RetrieverConfig
 
 squash = lambda s: re.sub(r"\s+", " ", s)
@@ -25,7 +24,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).parent / "retriever_benchmark.md"))
     a = ap.parse_args()
-    policy, finder, personas, users, _ = bf.load(Config.load("finder.yaml"))
+    policy, finder, personas, users, _ = bf.load(bf.config())
     qa = bf.read_jsonl("qa.jsonl")
     planted = [squash(x["value"]) for x in json.loads((bf.DATA / "pii.json").read_text(encoding="utf-8"))]
     settings = [("best, 2 per source", RetrieverConfig(per_source=2, select="best")),

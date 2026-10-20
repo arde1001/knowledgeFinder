@@ -24,7 +24,6 @@ from pathlib import Path
 import bench_finder as bf
 from kf.expert import NOTHING, Expert, notice
 from kf.extract import extract_text
-from kf.finder import Config
 from kf.pii import strip
 
 squash = lambda s: re.sub(r"\s+", " ", s).strip()
@@ -74,7 +73,7 @@ def main():
     ap.add_argument("--pairs", type=int, default=30)
     ap.add_argument("--out", default=str(Path(__file__).parent / "expert_benchmark.md"))
     a = ap.parse_args()
-    policy, finder, personas, users, _ = bf.load(Config.load("finder.yaml"))
+    policy, finder, personas, users, _ = bf.load(bf.config())
     qa, negatives, general = bf.read_jsonl("qa.jsonl"), bf.read_jsonl("negatives.jsonl"), bf.read_jsonl("general.jsonl")
     planted = [squash(x["value"]) for x in json.loads((bf.DATA / "pii.json").read_text(encoding="utf-8"))]
     rng = random.Random(0)

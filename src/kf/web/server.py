@@ -1,6 +1,6 @@
 """Local web demo of the domain expert, in one shell:
 
-    python -m kf.web --data testdata [--port 8765] [--no-browser] [--no-ollama]
+    python -m kf.web --data testdata [--profile low] [--port 8765] [--no-browser] [--no-ollama]
 
 One process does everything: it starts Ollama if nothing answers on its port (a child process, stopped again when this
 process ends), serves the page on 127.0.0.1 only, and opens a browser window. Ctrl+C, closing the shell or killing the
@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, unquote_plus, urlsplit
 
 import requests
 
-from kf import account, llm
+from kf import account, llm, profiles
 from kf.expert import Expert, notice
 from kf.finder import load_finder
 
@@ -214,16 +214,20 @@ def handler(app):
 def main():
     ap = argparse.ArgumentParser(description="Local web demo of the domain expert.")
     ap.add_argument("--data", default="testdata")
-    ap.add_argument("--config", default="finder.yaml")
+    ap.add_argument("--config", help="finder thresholds (default: the profile's)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-browser", action="store_true", help="only print the address")
     ap.add_argument("--no-ollama", action="store_true", help="do not start Ollama (it must already be running)")
+    profiles.add_argument(ap)
     a = ap.parse_args()
+    profiles.activate(a.profile)
     data = Path(a.data)
-    for need in (data / "filemap.json", data / "index"):
-        if not need.exists():
-            raise SystemExit(f"{need} is missing: run the labeler and the indexer first (see docs/tutorial.md)")
-    finder = load_finder(data, a.config)
+    if not (data / "filemap.json").exists():
+        raise SystemExit(f"{data / 'filemap.json'} is missing: run the labeler and the indexer first (see docs/tutorial.md)")
+    try:
+        finder = load_finder(data, a.config)
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(str(exc))
     try:  # bind first: a busy port should fail before Ollama is started
         server = ThreadingHTTPServer(("127.0.0.1", a.port), handler(App(finder, data)))
     except OSError as exc:

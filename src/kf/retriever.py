@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from kf import llm
+from kf import llm, profiles
 from kf.extract import extract_text
 from kf.indexer import chunk_text, embedding_input
 from kf.pii import contains_pii, strip
@@ -38,7 +38,7 @@ class Passage:
 
 class Retriever:
     def __init__(self, finder, config=None, embed_documents=None):
-        self.finder, self.config = finder, config or RetrieverConfig()
+        self.finder, self.config = finder, config or RetrieverConfig(max_chars=profiles.current().excerpt_chars)
         model = finder.index.meta["model"] or None
         self._embed_documents = embed_documents or (lambda texts: llm.embed_documents(texts, model))
         self.dropped = []

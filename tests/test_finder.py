@@ -211,3 +211,11 @@ def test_denial_mode_validation():
         Config(denial_mode="loud")
     with pytest.raises(ValueError):
         Config(margin=-1)
+
+
+def test_thresholds_tuned_for_another_embedding_model_are_refused(tmp_path):
+    f = make_finder(tmp_path)
+    f.index.meta["model"] = "nomic-embed-text"
+    with pytest.raises(ValueError, match="tuned for granite"):
+        Finder(f.policy, f.fm, f.index, f.root, Config(tuned_for="granite-embedding:30m"))
+    Finder(f.policy, f.fm, f.index, f.root, Config(tuned_for="nomic-embed-text:latest"))  # same model

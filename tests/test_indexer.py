@@ -4,7 +4,7 @@ import zlib
 import numpy as np
 import pytest
 
-from kf.indexer import Index, build_index, chunk_text, embedding_input
+from kf.indexer import Index, build_index, chunk_text, embedding_input, index_dir
 from kf.labeler import build_filemap
 from kf.perms import Policy
 
@@ -99,3 +99,11 @@ def test_vectors_are_unit_length(corpus):
     root, fm, policy, out = corpus
     build_index(root, fm, policy, out, fake_embed)
     assert np.allclose(np.linalg.norm(Index.load(out).vectors, axis=1), 1.0)
+
+
+def test_index_dir_is_per_model_and_keeps_an_older_single_index(corpus, tmp_path):
+    root, fm, policy, _ = corpus
+    assert index_dir(tmp_path, "granite-embedding:30m") == tmp_path / "index" / "granite-embedding_30m"
+    build_index(root, fm, policy, tmp_path / "index", fake_embed, model="nomic-embed-text")
+    assert index_dir(tmp_path, "nomic-embed-text:latest") == tmp_path / "index"
+    assert index_dir(tmp_path, "all-minilm") == tmp_path / "index" / "all-minilm"

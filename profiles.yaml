@@ -1,0 +1,40 @@
+# Hardware profiles. Pick one with --profile NAME or KF_PROFILE=NAME; KF_CHAT_MODEL / KF_EMBED_MODEL still override
+# the models. Requirements and measured speed per profile: docs/system-requirements.md (evals/profile_benchmark.md).
+# Changing embed_model needs its own index (python -m kf.indexer --profile NAME) and finder thresholds tuned for it
+# (`finder`, whose tuned_for must name the same model: the finder refuses to start otherwise).
+
+high:  # NVIDIA GPU with 10 GB+ VRAM, or Apple Silicon with 24 GB+: the settings the project was tuned with
+  chat_model: qwen3:8b
+  embed_model: nomic-embed-text
+  finder: finder.yaml
+  num_ctx: 8192
+  workers: 4
+  label_chars: 3000
+  excerpt_chars: 6000
+  answer_tokens: 400
+  history_turns: 4
+  ollama_env: {}
+
+mid:  # Apple Silicon with 16 GB, or a laptop NVIDIA GPU with 6-8 GB
+  chat_model: qwen3:4b-instruct  # plain qwen3:4b is a thinking-only model that ignores think=false
+  embed_model: nomic-embed-text
+  finder: finder.yaml
+  num_ctx: 6144
+  workers: 2
+  label_chars: 3000
+  excerpt_chars: 6000
+  answer_tokens: 400
+  history_turns: 4
+  ollama_env: {OLLAMA_NUM_PARALLEL: "1", OLLAMA_MAX_LOADED_MODELS: "2", OLLAMA_FLASH_ATTENTION: "1", OLLAMA_KV_CACHE_TYPE: "q8_0"}
+
+low:  # 8 GB RAM, no usable GPU (Intel Mac, older laptops) or 8 GB Apple Silicon
+  chat_model: qwen3:1.7b
+  embed_model: nomic-embed-text
+  finder: finder.yaml
+  num_ctx: 4096
+  workers: 1
+  label_chars: 1500
+  excerpt_chars: 3000
+  answer_tokens: 300
+  history_turns: 2
+  ollama_env: {OLLAMA_NUM_PARALLEL: "1", OLLAMA_MAX_LOADED_MODELS: "2", OLLAMA_FLASH_ATTENTION: "1", OLLAMA_KV_CACHE_TYPE: "q8_0"}

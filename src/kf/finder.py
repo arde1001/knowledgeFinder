@@ -1,6 +1,6 @@
 """Find the readable files that answer a question, plus at most one drive the user may ask for access to.
 
-    PYTHONPATH=src .venv/bin/python -m kf.finder --data testdata --user <id> "question"
+    PYTHONPATH=src .venv/bin/python -m kf.finder --data testdata [--profile low] --user <id> "question"
 
 Deterministic code only; no LLM runs here. Result holds readable sources and a drive-level denial (drive, name,
 contact role and nothing else). Design: docs/finder-design.md.
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import yaml
 
-from kf import filemap
-from kf.indexer import Index
+from kf import filemap, profiles
+from kf.indexer import Index, index_dir, same_model
 from kf.lexical import Bm25
 from kf.perms import Policy
 
@@ -32,6 +32,7 @@ class Config:
     lex_weight: float = 0.0  # weight of the BM25 keyword score added to the cosine similarity (0 = embeddings only)
     denial_mode: str = "cluster"  # "cluster": N of the top K files in one unreadable drive; "best": the best match is restricted
     margin: float = 0.0  # "best" mode: that drive's best file must beat every file in other drives by this much
+    tuned_for: str = ""  # embedding model the scores were tuned on; the finder refuses an index built with another one
 
     def __post_init__(self):
         if not (1 <= self.max_sources <= POOL and 1 <= self.K <= POOL and self.N >= 1 and self.lex_weight >= 0):
@@ -87,6 +88,11 @@ class Finder:
     def __init__(self, policy, fm, index, root, config=None):
         self.policy, self.fm, self.index, self.root = policy, fm, index, root
         self.config = config or Config()
+        built_with = index.meta.get("model", "")
+        if self.config.tuned_for and built_with and not same_model(self.config.tuned_for, built_with):
+            # thresholds are cosine scores of one model: with another, sources and denial notices (invariant 4) go wrong
+            raise ValueError(f"finder thresholds are tuned for {self.config.tuned_for} but the index was built with "
+                             f"{built_with}: use that model's finder file (profiles.yaml) or rebuild the index")
         self.timing = {}
         self.refresh()
 
@@ -168,10 +174,15 @@ class Finder:
         return self.decide(self.retrieve(user, query))
 
 
-def load_finder(data, config_path="finder.yaml"):
-    data = Path(data)
+def load_finder(data, config_path=None):
+    """Finder over <data> with the active profile's index and thresholds (config_path overrides the thresholds file)."""
+    data, p = Path(data), profiles.current()
+    config_path = config_path or p.finder
     config = Config.load(config_path) if Path(config_path).exists() else Config()
-    return Finder(Policy.load(data), filemap.load(data / "filemap.json"), Index.load(data / "index"), data / "drive", config)
+    index = index_dir(data, p.embed_model)
+    if not (index / "chunks.json").exists():
+        raise FileNotFoundError(f"no index for {p.embed_model} in {data}: run python -m kf.indexer --data {data} --profile {p.name}")
+    return Finder(Policy.load(data), filemap.load(data / "filemap.json"), Index.load(index), data / "drive", config)
 
 
 def main():
@@ -179,8 +190,10 @@ def main():
     ap.add_argument("question")
     ap.add_argument("--user", required=True)
     ap.add_argument("--data", default="testdata")
-    ap.add_argument("--config", default="finder.yaml")
+    ap.add_argument("--config", help="finder thresholds (default: the profile's)")
+    profiles.add_argument(ap)
     a = ap.parse_args()
+    profiles.activate(a.profile)
     finder = load_finder(a.data, a.config)
     r = finder.find(a.user, a.question)
     for s in r.sources:

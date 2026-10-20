@@ -16,13 +16,18 @@ from pathlib import Path
 
 import yaml
 
-from kf import filemap, llm
+from kf import filemap, llm, profiles
 from kf.corpus.spec import ROLE_BOARD, ROLE_LEADER, ROLE_MEMBER
 from kf.finder import Config, Finder
-from kf.indexer import Index
+from kf.indexer import Index, index_dir
 from kf.perms import Policy
 
 DATA = Path("testdata")
+
+
+def config(path=None):
+    """Finder thresholds: the given file, or the active profile's (KF_PROFILE)."""
+    return Config.load(path or profiles.current().finder)
 
 
 def load(config):
@@ -51,8 +56,8 @@ def load(config):
             embed_times.append(time.perf_counter() - t0)
         return cache[text]
 
-    model = json.loads((DATA / "index" / "chunks.json").read_text(encoding="utf-8"))["meta"]["model"]
-    index = Index.load(DATA / "index", embed_query=embed_query)
+    index = Index.load(index_dir(DATA, profiles.current().embed_model), embed_query=embed_query)
+    model = index.meta["model"]
     finder = Finder(policy, filemap.load(DATA / "filemap.json"), index, DATA / "drive", config)
     return policy, finder, personas, everyone, embed_times
 
@@ -233,13 +238,13 @@ def denial_sweep(finder, policy, personas, qa, negatives, general, raws, base):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="finder.yaml")
+    ap.add_argument("--config", help="finder thresholds (default: the profile's, KF_PROFILE)")
     ap.add_argument("--sweep", action="store_true")
     ap.add_argument("--lexical", action="store_true", help="compare BM25 weights instead of the normal run")
     ap.add_argument("--denial", action="store_true", help="compare denial rules instead of the normal run")
     ap.add_argument("--out", default=str(Path(__file__).parent / "finder_benchmark.md"))
     a = ap.parse_args()
-    cfg = Config.load(a.config)
+    cfg = config(a.config)
     policy, finder, personas, users, embed_times = load(cfg)
     qa, negatives, general = read_jsonl("qa.jsonl"), read_jsonl("negatives.jsonl"), read_jsonl("general.jsonl")
     if a.lexical:

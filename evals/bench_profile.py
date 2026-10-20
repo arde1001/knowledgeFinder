@@ -18,10 +18,10 @@ from pathlib import Path
 import requests
 
 import bench_finder as bf
-from kf import filemap, labeler, llm
+from kf import filemap, labeler, llm, profiles
 from kf.expert import Expert
 from kf.extract import extract_text
-from kf.finder import Config, Finder
+from kf.finder import Finder
 from kf.indexer import Index, build_index
 from kf.perms import Policy
 
@@ -67,7 +67,7 @@ def rates(calls):
 def run(chat, embed, device, threads, n_questions, n_followups, n_label, config):
     rec = Recorder({"num_gpu": 0, "num_thread": threads} if device == "cpu" else {})
     llm.requests = rec
-    llm.CHAT_MODEL = chat
+    profiles.activate(chat_model=chat, embed_model=embed)  # the rest (num_ctx, prompt sizes) from KF_PROFILE
     unload(chat, embed)
     row = {"chat": chat, "embed": embed, "device": device}
 
@@ -91,7 +91,7 @@ def run(chat, embed, device, threads, n_questions, n_followups, n_label, config)
     rec.calls.clear()
     t0 = time.perf_counter()
     for rel in sample:
-        labeler.llm_describe(rel, extract_text(DATA / "drive" / rel)[: labeler.TEXT_LIMIT])
+        labeler.llm_describe(rel, extract_text(DATA / "drive" / rel)[: profiles.current().label_chars])
     row["label_s_per_file"] = (time.perf_counter() - t0) / len(sample)
     row["label_prompt_tok"], row["label_prefill_tps"], row["label_gen_tps"] = rates(rec.calls)
 
@@ -144,13 +144,13 @@ def main():
     ap.add_argument("--questions", type=int, default=8)
     ap.add_argument("--followups", type=int, default=2)
     ap.add_argument("--label-files", type=int, default=8)
-    ap.add_argument("--config", default="finder.yaml")
+    ap.add_argument("--config", help="finder thresholds for the runs' embedder (default: the profile's)")
     ap.add_argument("--out", default=str(Path(__file__).parent / "profile_benchmark.md"))
     a = ap.parse_args()
     rows = []
     for spec in a.run:
         chat, embed, device = spec.split(",")
-        rows.append(run(chat, embed, device, a.threads, a.questions, a.followups, a.label_files, Config.load(a.config)))
+        rows.append(run(chat, embed, device, a.threads, a.questions, a.followups, a.label_files, bf.config(a.config)))
         print(json.dumps(rows[-1]), flush=True)
     lines = ["| " + " | ".join(h for _, h, _ in COLUMNS) + " |", "|" + "---|" * len(COLUMNS)]
     lines += ["| " + " | ".join(f.format(r[k]) for k, _, f in COLUMNS) + " |" for r in rows]

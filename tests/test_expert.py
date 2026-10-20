@@ -5,7 +5,7 @@ import pytest
 from test_retriever import env, make  # noqa: F401  (env is a pytest fixture)
 
 from kf import account
-from kf.expert import NOTHING, Expert
+from kf.expert import NOTHING, Expert, prompt_tokens
 from kf.finder import Config
 
 
@@ -188,3 +188,23 @@ def test_asked_about_wording():
     assert account._asked_about("what is in the finance folder?", "finance", "Finance")
     assert account._asked_about("show me drive Finance", "finance", "Finance")
     assert not account._asked_about("what are the finance plans?", "finance", "Finance")
+
+
+def test_prompt_guard_drops_old_turns_before_excerpts(env):
+    _, e = expert(env, FakeChat("At Harbour Hall [1]."), num_ctx=100_000)
+    base = prompt_tokens(e.ask("bob", "gala venue Harbour Hall").prompts[-1])
+    chat = FakeChat("gala venue Harbour Hall", "At Harbour Hall [1].")
+    _, e = expert(env, chat, num_ctx=base + 100 + 50, answer_tokens=100)
+    e.history.append(("old question", "y" * 6000))
+    r = e.ask("bob", "gala venue Harbour Hall")
+    sent = json.dumps(r.prompts[-1])
+    assert "yyyy" not in sent and "Harbour Hall" in sent and r.sources  # history went, the excerpt stayed
+    assert prompt_tokens(r.prompts[-1]) + 100 <= base + 150
+
+
+def test_prompt_guard_drops_excerpts_when_even_one_turn_does_not_fit(env):
+    _, e = expert(env, FakeChat("At Harbour Hall [1]."), num_ctx=100_000)
+    base = prompt_tokens(e.ask("bob", "gala venue Harbour Hall").prompts[-1])
+    _, e = expert(env, FakeChat("At Harbour Hall [1]."), num_ctx=base + 100 - 5, answer_tokens=100)
+    r = e.ask("bob", "gala venue Harbour Hall")
+    assert "none found" in r.prompts[-1][-1]["content"] and r.sources == []  # a citation of a dropped excerpt lists nothing

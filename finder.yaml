@@ -1,6 +1,7 @@
 # Finder thresholds, tuned on evals/bench_finder.py (nomic-embed-text cosine + weighted BM25 on the synthetic corpus).
 # Re-tune after changing the embedding model, the label context, the lexical weight, or when real documents replace the
 # test corpus (evals/bench_finder.py --lexical shows how the thresholds move with the weight).
+tuned_for: nomic-embed-text  # the embedding model these scores belong to (the finder checks the index)
 lex_weight: 0.3        # BM25 keyword score (0-1, normalised) times this is added to the cosine similarity (0 = embeddings only)
 max_sources: 5         # at most this many readable files per question (1-10)
 ratio: 0.95            # drop a source scoring below ratio * the best readable score
