@@ -1,8 +1,17 @@
 # Lightweight branch: phase-by-phase report
 
 Branch `lightweight` (from `main` at d3f621f), 2026-10-20. Goal: the proof of concept runs acceptably on laptops and
-Macs without a strong GPU, while keeping everything mergeable into `main` later. **The default profile `high` behaves
-exactly like `main`**: without `--profile` nothing changes for the development PC.
+Macs without a strong GPU, while keeping everything mergeable into `main` later.
+
+**Under the default profile `high`, the commands and evals work as on `main`:** same models, context, prompt sizes and
+thresholds. The web page does change on every profile, `high` included:
+- it streams answers (`/api/ask_stream`);
+- it loads the models at start;
+- it shows a Model card when more than one profile model is installed.
+
+The prompt budget guard can only trim a prompt that would not fit the context anyway. The full suite run with `high` on this branch
+(`evals/suite_report.md`, `evals/suite/`) passes every check and reproduces `main`'s expert benchmark number for
+number (`evals/expert_benchmark.md`).
 
 Nothing was pushed. The test-data release is prepared but not uploaded (see "Needs you").
 
@@ -167,8 +176,9 @@ They are labelled as estimates until a friend runs `kf.doctor`.
 
 - **`python -m kf.workspace pack --data testdata`** zips a generated corpus with its labels and every index (4.3 MB).
   - It **refuses** any folder without the generator's `manifest.json`.
-  - It also refuses when any file under `drive/` is not in that manifest, so real files can't be packed by mistake.
-    There is a test.
+  - It also refuses when anything names a path the generator didn't write, so real files can't be packed by mistake.
+    That covers files under `drive/`, labels in `filemap.json` and chunk paths in any index. There are tests.
+  - The prepared zip was checked the same way: all 249 labels and every chunk path in it are generated files.
 - **Docs** (Haiku agent, checked and corrected):
   - README, tutorial and `docs/windows-mac.md` are in step. They cover profiles, the doctor, the Option A/B/C test data
     paths (prebuilt download, generate yourself, real files), per-model indexes, the Mac/Windows Ollama settings, and the
@@ -209,7 +219,7 @@ They are labelled as estimates until a friend runs `kf.doctor`.
   - (c) Run `low` with `qwen3:4b-instruct` and accept 17 s per CPU answer.
 
   I'd try (b). It's a small change, but it adds a heuristic to the question path, so it's your call.
-- **What to merge into `main`.** Everything here is hardware-neutral and keeps `main`'s behaviour under `high`: profiles,
+- **What to merge into `main`.** Everything here is hardware-neutral, and only the web page changes visibly under `high`: profiles,
   per-model indexes and the `tuned_for` guard, the prompt guard, warm-up, extraction cache, doctor, streaming, picker,
   pack, and the `qwen3:4b` doc fix. Two things will diverge:
   - **Profile values:** a stronger PC or server may want its own profile (e.g. a bigger chat model). That is one more

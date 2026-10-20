@@ -63,3 +63,9 @@ def test_pack_refuses_anything_but_a_generated_corpus(tmp_path, fragment):
     next(d for d in (data / "drive").iterdir() if d.is_dir()).joinpath("real-minutes.docx").write_bytes(b"not generated")
     with pytest.raises(SystemExit, match="1 unknown"):
         workspace.pack(data, tmp_path / "bad.zip")
+    (next(d for d in (data / "drive").iterdir() if d.is_dir()) / "real-minutes.docx").unlink()
+    index = data / "index" / "some-model"
+    index.mkdir(parents=True)
+    (index / "chunks.json").write_text(json.dumps({"meta": {}, "chunks": [{"path": "Board/real-minutes.docx", "chunk": 0, "text": "x"}]}), encoding="utf-8")
+    with pytest.raises(SystemExit, match="1 paths the generator did not write"):  # deleted since, but its text is still indexed
+        workspace.pack(data, tmp_path / "bad.zip")

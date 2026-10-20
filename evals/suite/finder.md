@@ -1,6 +1,6 @@
 # Finder benchmark
 
-config: Config(max_sources=5, ratio=0.95, min_score=0.87, K=3, N=2, min_denial_score=0.87, lex_weight=0.3, denial_mode='best', margin=0.04)
+config: Config(max_sources=5, ratio=0.95, min_score=0.87, K=3, N=2, min_denial_score=0.87, lex_weight=0.3, denial_mode='best', margin=0.04, tuned_for='nomic-embed-text')
 
 87 questions + 35 unanswerable + 24 general-information; zero permission leaks (asserted).
 
@@ -13,6 +13,6 @@ config: Config(max_sources=5, ratio=0.95, min_score=0.87, K=3, N=2, min_denial_s
 | sharee (test.committee_member) | 39 | 1.00 | 0.95 | 0.97 | 0.05 | 1.18 | 48 | 0.88 | 0.00 | 0.00 | 1.00 | 1.00 | 0.00 | 0.00 / 0.00 | 0.75 |
 | guest (none) | 21 | 1.00 | 0.95 | 0.98 | 0.05 | 1.19 | 66 | 0.88 | 0.00 | 0.00 | 1.00 | 1.00 | 0.00 | 0.00 / 0.00 | 0.75 |
 
-latency: query embedding 13 ms mean (146 unique questions), ranking 0.1 ms mean / 0.2 ms p95 over 876 searches
+latency: query embedding 14 ms mean (146 unique questions), ranking 0.1 ms mean / 0.3 ms p95 over 876 searches
 
 superuser found: aligned 1.00, cross-topic 0.94

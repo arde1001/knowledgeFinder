@@ -105,6 +105,14 @@ def pack(data, out):
     if on_disk != listed:
         raise SystemExit(f"drive/ does not match the generator's manifest ({len(on_disk - listed)} unknown, "
                          f"{len(listed - on_disk)} missing files): refusing to pack")
+    # labels and index chunks carry text too: a file labelled or indexed once and deleted since would still ship
+    labelled = json.loads((data / "filemap.json").read_text(encoding="utf-8")) if (data / "filemap.json").exists() else {}
+    folders = {"/".join(p.split("/")[:i]) for p in listed for i in range(1, p.count("/") + 1)}
+    stale = (set(labelled.get("files", {})) - listed) | (set(labelled.get("folders", {})) - folders)
+    for chunks in (data / "index").rglob("chunks.json") if (data / "index").is_dir() else []:
+        stale |= {c["path"] for c in json.loads(chunks.read_text(encoding="utf-8"))["chunks"]} - listed
+    if stale:
+        raise SystemExit(f"labels or indexes name {len(stale)} paths the generator did not write: refusing to pack")
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for name in BUNDLE:
             p = data / name
