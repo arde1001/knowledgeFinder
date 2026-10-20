@@ -1,6 +1,7 @@
 """Minimal Ollama client. Models and context size come from the active profile (kf.profiles), so they can be swapped
 without code changes."""
 
+import json
 import os
 
 import requests
@@ -18,21 +19,37 @@ def __getattr__(name):  # llm.CHAT_MODEL / llm.EMBED_MODEL always follow the act
     raise AttributeError(name)
 
 
-def chat(messages, model=None, temperature=0.7, seed=None, max_tokens=None, timeout=300):
-    """Return the reply text. Thinking is off: these tasks want short direct answers."""
+def _chat_request(messages, model, temperature, seed, max_tokens, stream):
     # one num_ctx per process: Ollama reloads the model whenever it changes
     options = {"temperature": temperature, "num_ctx": profiles.current().num_ctx}
     if seed is not None:
         options["seed"] = seed
     if max_tokens:
         options["num_predict"] = max_tokens
-    r = requests.post(
-        f"{URL}/api/chat",
-        json={"model": model or profiles.current().chat_model, "messages": messages, "stream": False, "think": False, "options": options},
-        timeout=timeout,
-    )
+    return {"model": model or profiles.current().chat_model, "messages": messages, "stream": stream, "think": False, "options": options}
+
+
+def chat(messages, model=None, temperature=0.7, seed=None, max_tokens=None, timeout=300):
+    """Return the reply text. Thinking is off: these tasks want short direct answers."""
+    r = requests.post(f"{URL}/api/chat", json=_chat_request(messages, model, temperature, seed, max_tokens, False), timeout=timeout)
     r.raise_for_status()
     return r.json()["message"]["content"].strip()
+
+
+def chat_stream(messages, model=None, temperature=0.7, seed=None, max_tokens=None, timeout=300):
+    """Yield the reply text piece by piece as Ollama generates it (one JSON object per line)."""
+    with requests.post(f"{URL}/api/chat", json=_chat_request(messages, model, temperature, seed, max_tokens, True), timeout=timeout, stream=True) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if not line:
+                continue
+            part = json.loads(line)
+            if "error" in part:  # Ollama reports a failure mid-stream as a line of its own
+                raise requests.RequestException(part["error"])
+            if text := part.get("message", {}).get("content"):
+                yield text
+            if part.get("done"):
+                break
 
 
 # (document prefix, query prefix) for embedding models that expect one

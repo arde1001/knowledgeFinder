@@ -16,8 +16,11 @@ const roleClass = (role) => role.replace(/^test\./, "");
 const prettyName = (id) => id.split(".").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 
 let user = null;
-let session = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
+let session = null;
 let busy = false;
+let defaults = null;  // the models the server runs with; a session only needs a /api/model call when the selects differ
+let ready = Promise.resolve();  // the pending /api/model call of the current session: a question waits for it
+const newId = () => (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
 
 function banner(text) {
   $("banner").hidden = !text;
@@ -79,6 +82,72 @@ function renderAnswer(msg, data) {
   }
 }
 
+// The answer, shown as it is generated. The final event replaces the streamed text (the server may rewrite it: NOT_FOUND, citations).
+// Falls back to /api/ask when the stream cannot be opened or breaks before the first word; an error event is reported as is.
+async function fetchAnswer(msg, payload) {
+  let started = false;
+  try {
+    const res = await fetch("/api/ask_stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    if (!res.ok || !res.body) throw new Error(`Request failed (${res.status})`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "", text = "", final = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (let end; (end = buffer.indexOf("\n\n")) >= 0;) {
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const name = /^event: (\w+)/m.exec(block)?.[1];
+        const data = JSON.parse(/^data: (.*)$/m.exec(block)?.[1] || "{}");
+        if (name === "delta") {
+          started = true;
+          text += data.text;
+          renderAnswer(msg, { answer: text, sources: [], notice: null });
+          $("log").scrollTop = $("log").scrollHeight;
+        } else if (name === "final") final = data;
+        else if (name === "error") throw Object.assign(new Error(data.error), { reported: true });
+      }
+    }
+    if (!final) throw new Error("The answer stopped early.");
+    return final;
+  } catch (err) {
+    if (started || err.reported) throw err;
+    return api("/api/ask", payload);
+  }
+}
+
+const modelChoice = () => ({ chat: $("model-chat").value, embed: $("model-embed").value });
+
+// A new session starts on the server's default models, so the chosen ones are sent again with it.
+function newSession() {
+  session = newId();
+  const c = modelChoice();
+  ready = defaults && (c.chat !== defaults.chat || c.embed !== defaults.embed) ? api("/api/model", { user, session, ...c }) : Promise.resolve();
+}
+
+async function initModels() {
+  const m = await api("/api/models");
+  for (const [id, list, cur] of [["model-chat", m.chat, m.current.chat], ["model-embed", m.embed, m.current.embed]]) {
+    $(id).replaceChildren(...list.map((name) => el("option", "", name)));
+    $(id).value = cur;
+  }
+  defaults = m.current;
+  $("embed-row").hidden = m.embed.length < 2;
+  $("model-card").hidden = m.chat.length < 2 && m.embed.length < 2;
+}
+
+async function changeModel() {
+  try {
+    await api("/api/model", { user, session, ...modelChoice() });
+    clearChat();  // the server dropped this session's history with the old model
+  } catch (err) {
+    banner(err.message);
+    await initModels().catch(() => {});
+  }
+}
+
 async function ask(question) {
   if (busy || !question.trim()) return;
   busy = true;
@@ -91,7 +160,8 @@ async function ask(question) {
   dots.append(el("span"), el("span"), el("span"));
   msg.append(dots);
   try {
-    renderAnswer(msg, await api("/api/ask", { user, session, question }));
+    await ready;
+    renderAnswer(msg, await fetchAnswer(msg, { user, session, question }));
   } catch (err) {
     msg.remove();
     banner(err.message);
@@ -107,7 +177,7 @@ async function ask(question) {
 async function selectUser(id) {
   user = id;
   store.set("kf-user", id);
-  session = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
+  newSession();
   const me = await api(`/api/me?user=${encodeURIComponent(id)}`);
   const roles = $("roles");
   roles.replaceChildren(...me.roles.map((r) => el("span", `chip ${roleClass(r)}`, ROLE_LABEL[r] || r)));
@@ -126,6 +196,7 @@ async function selectUser(id) {
 async function init() {
   try {
     const data = await api("/api/users");
+    await initModels().catch(() => {});  // the picker is optional: without it the server's models are used
     const groups = new Map();
     for (const u of data.users) {
       const key = u.roles[0] || "";
@@ -166,9 +237,11 @@ async function init() {
 $("user").addEventListener("change", (e) => selectUser(e.target.value).catch((err) => banner(err.message)));
 $("new-chat").addEventListener("click", () => {
   api("/api/reset", { user, session }).catch(() => {});
-  session = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
+  newSession();
   clearChat();
 });
+$("model-chat").addEventListener("change", changeModel);
+$("model-embed").addEventListener("change", changeModel);
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
   const q = $("question").value;

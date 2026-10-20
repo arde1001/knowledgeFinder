@@ -71,6 +71,8 @@ select { padding-right: 8px; }
 textarea { resize: vertical; min-height: 52px; max-height: 180px; }
 select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 3px solid var(--green-3); outline-offset: 2px; }
 
+#embed-row { margin-top: 12px; }
+#model-card .hint { margin: 10px 0 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .chip { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--grey-4); color: var(--ink); }
 .chip.board { background: var(--blue-dark); color: #fff; }

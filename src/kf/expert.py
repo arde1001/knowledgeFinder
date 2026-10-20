@@ -58,9 +58,9 @@ class Answer:
 
 
 class Expert:
-    def __init__(self, finder, retriever=None, chat=llm.chat, history_turns=None, answer_tokens=None, num_ctx=None):
+    def __init__(self, finder, retriever=None, chat=llm.chat, history_turns=None, answer_tokens=None, num_ctx=None, chat_stream=llm.chat_stream):
         p = profiles.current()
-        self.finder, self.retriever, self.chat = finder, retriever or Retriever(finder), chat
+        self.finder, self.retriever, self.chat, self.chat_stream = finder, retriever or Retriever(finder), chat, chat_stream
         self.answer_tokens, self.num_ctx = answer_tokens or p.answer_tokens, num_ctx or p.num_ctx
         # (question, final answer): no excerpts are ever kept (invariant 5)
         self.history = deque(maxlen=history_turns or p.history_turns)
@@ -93,7 +93,8 @@ class Expert:
         messages.append({"role": "user", "content": f"{info.text()}\n\nExcerpts:\n\n{excerpts}\n\nQuestion: {query}"})
         return messages, numbers
 
-    def ask(self, user, question):
+    def ask(self, user, question, on_delta=None):
+        """on_delta(text) gets the answer call's words as they are generated; the returned Answer is the same either way."""
         question, prompts = question.strip(), []
         if not question:
             raise ValueError("empty question")
@@ -113,7 +114,14 @@ class Expert:
             # Ollama would cut an overlong prompt from the front, system rules first: drop old turns, then the weakest excerpts
             history.pop(0) if history else passages.pop()
         prompts.append(messages)
-        answer = self.chat(messages, temperature=0.1, seed=0, max_tokens=self.answer_tokens)
+        if on_delta:  # only model words are streamed: sources and the denial notice are added below, once the answer is final
+            parts = []
+            for delta in self.chat_stream(messages, temperature=0.1, seed=0, max_tokens=self.answer_tokens):
+                parts.append(delta)
+                on_delta(delta)
+            answer = "".join(parts).strip()
+        else:
+            answer = self.chat(messages, temperature=0.1, seed=0, max_tokens=self.answer_tokens)
         if "NOT_FOUND" in answer:  # the model sometimes explains first; either way no sources are listed for an answer that found nothing
             answer = NOTHING
         answer = re.sub(r"\s?\[(\d+)\]", lambda m: m.group(0) if int(m.group(1)) in numbers.values() else "", answer)  # no dangling citations
