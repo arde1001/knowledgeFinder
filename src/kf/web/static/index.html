@@ -30,6 +30,16 @@
         <div id="roles" class="chips" aria-label="Roles"></div>
       </section>
 
+      <section class="card" id="model-card" hidden>
+        <label for="model-chat" class="label">Model</label>
+        <select id="model-chat"></select>
+        <div id="embed-row" hidden>
+          <label for="model-embed" class="label">Embedding model</label>
+          <select id="model-embed"></select>
+        </div>
+        <p class="hint">Changing the model starts a new chat.</p>
+      </section>
+
       <section class="card" id="tests-card" hidden>
         <h2>Test questions</h2>
         <p class="hint">One fact from each drive. Ask the same question as different users.</p>

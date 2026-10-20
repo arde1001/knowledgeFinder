@@ -179,14 +179,15 @@ class Finder:
         return self.decide(self.retrieve(user, query))
 
 
-def load_finder(data, config_path=None):
-    """Finder over <data> with the active profile's index and thresholds (config_path overrides the thresholds file)."""
+def load_finder(data, config_path=None, embed_model=None):
+    """Finder over <data> with the active profile's index and thresholds (config_path overrides the thresholds file,
+    embed_model the index: the web demo's model picker passes both for another embedding model)."""
     data, p = Path(data), profiles.current()
-    config_path = config_path or p.finder
+    config_path, embed_model = config_path or p.finder, embed_model or p.embed_model
     config = Config.load(config_path) if Path(config_path).exists() else Config()
-    index = index_dir(data, p.embed_model)
+    index = index_dir(data, embed_model)
     if not (index / "chunks.json").exists():
-        raise FileNotFoundError(f"no index for {p.embed_model} in {data}: run python -m kf.indexer --data {data} --profile {p.name}")
+        raise FileNotFoundError(f"no index for {embed_model} in {data}: run python -m kf.indexer --data {data} --profile {p.name}")
     return Finder(Policy.load(data), filemap.load(data / "filemap.json"), Index.load(index), data / "drive", config)
 
 

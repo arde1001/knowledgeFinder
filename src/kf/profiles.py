@@ -47,6 +47,13 @@ def load(name="high", path=PATH):
     return Profile(name=name, **values)
 
 
+def all_profiles():
+    """Every profile in profiles.yaml (just the built-in `high` without the file): the models the web demo may offer."""
+    if not PATH.exists():
+        return [Profile()]
+    return [load(name, PATH) for name in yaml.safe_load(PATH.read_text(encoding="utf-8")) or {}]
+
+
 def activate(name=None, path=PATH, **overrides):
     """Choose the profile for this process. Environment model overrides win over the file; keyword overrides win over both."""
     global _active
