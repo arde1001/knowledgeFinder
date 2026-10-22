@@ -11,3 +11,7 @@ mydata/
 
 # the brand guidelines PDF names the association; this proof of concept keeps that name out of the repository
 docs/Brand Guidelines*.pdf
+
+# local files: the test-data release asset and the testers' notes
+kf-testdata.zip
+TESTING.txt
